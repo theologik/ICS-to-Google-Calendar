@@ -1,0 +1,175 @@
+function importEvents() {
+  var fileName = "invite.ics";
+  var file;
+  
+  try {
+    file = DriveApp.getFilesByName(fileName).next();
+  } catch (e) {
+    Logger.log("File not found: " + e.toString());
+    return;
+  }
+  
+  var content = file.getBlob().getDataAsString();
+  
+  if (content.trim() === "") {
+    Logger.log("The file is empty. No events to import.");
+    return;
+  }
+  
+  Logger.log("File content (first 200 characters): " + content.substring(0, 200));
+  
+  var calendarId = CalendarApp.getDefaultCalendar().getId();
+  
+  try {
+    Logger.log("Importing content: " + content.substring(0, 200) + "...");
+    
+    // Parse the iCal content into an event object
+    var events = parseICalToEvents(content);
+    
+    for (var i = 0; i < events.length; i++) {
+      var event = events[i];
+      Logger.log("Event object: " + JSON.stringify(event));
+      
+      if (!event.start || !event.end) {
+        Logger.log("Event is missing start or end time. Skipping.");
+        continue;
+      }
+      
+      // Check if the event already exists
+      if (checkEventExists(calendarId, event.summary, event.start.dateTime)) {
+        Logger.log("Event already exists. Skipping: " + event.summary);
+        continue;
+      }
+      
+      // Use insert instead of import
+      var response = Calendar.Events.insert(event, calendarId);
+      Logger.log("Insert response: " + JSON.stringify(response));
+      Logger.log("Inserted event successfully.");
+    }
+  } catch (error) {
+    Logger.log("Error importing events: " + error.toString());
+    if (error.details) {
+      Logger.log("Error details: " + JSON.stringify(error.details));
+    }
+  }
+}
+
+function parseICalToEvents(iCalContent) {
+  var lines = iCalContent.split(/\r\n|\n|\r/);
+  var events = [];
+  var currentEvent = null;
+  var inEvent = false;
+  var timezone = 'America/Los_Angeles'; // Default to Pacific Time
+
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    
+    // Handle line continuations
+    while (i + 1 < lines.length && lines[i + 1].match(/^\s/)) {
+      line += lines[i + 1].trim();
+      i++;
+    }
+    
+    if (line.startsWith('TZID:')) {
+      timezone = convertToIANATimezone(line.split(':')[1]);
+    }
+    
+    if (line === 'BEGIN:VEVENT') {
+      inEvent = true;
+      currentEvent = {};
+      continue;
+    }
+    if (line === 'END:VEVENT') {
+      inEvent = false;
+      if (currentEvent) {
+        events.push(currentEvent);
+      }
+      currentEvent = null;
+      continue;
+    }
+    if (inEvent && currentEvent) {
+      var parts = line.split(':');
+      if (parts.length >= 2) {
+        var key = parts[0].split(';')[0];
+        var value = parts.slice(1).join(':');
+        switch (key) {
+          case 'SUMMARY':
+            currentEvent.summary = value;
+            break;
+          case 'DESCRIPTION':
+            currentEvent.description = value;
+            break;
+          case 'LOCATION':
+            currentEvent.location = value;
+            break;
+          case 'DTSTART':
+          case 'DTEND':
+            var dateTime = formatDateTime(value, timezone);
+            if (key === 'DTSTART') {
+              currentEvent.start = { dateTime: dateTime, timeZone: timezone };
+            } else {
+              currentEvent.end = { dateTime: dateTime, timeZone: timezone };
+            }
+            break;
+        }
+      }
+    }
+  }
+
+  return events;
+}
+
+function formatDateTime(dateTimeString, timezone) {
+  // Remove any non-digit characters
+  dateTimeString = dateTimeString.replace(/\D/g, '');
+  
+  // Parse the date and time
+  var year = dateTimeString.substr(0, 4);
+  var month = dateTimeString.substr(4, 2);
+  var day = dateTimeString.substr(6, 2);
+  var hour = dateTimeString.substr(8, 2) || '00';
+  var minute = dateTimeString.substr(10, 2) || '00';
+  var second = dateTimeString.substr(12, 2) || '00';
+
+  // Create a date string in ISO 8601 format
+  var isoString = `${year}-${month}-${day}T${hour}:${minute}:${second}`;
+
+  // Create a date object in the specified timezone
+  var date = new Date(isoString);
+
+  // Return the formatted date string
+  return date.toISOString();
+}
+
+function convertToIANATimezone(windowsTimezone) {
+  var timezoneMap = {
+    'Pacific Standard Time': 'America/Los_Angeles',
+    // Add more mappings as needed
+  };
+  
+  return timezoneMap[windowsTimezone] || 'America/Los_Angeles'; // Default to Pacific Time if not found
+}
+
+function checkEventExists(calendarId, eventSummary, startTime) {
+  // Convert start time to Date object
+  var startDate = new Date(startTime);
+  var endDate = new Date(startDate.getTime() + 30 * 60000); // 30 minutes later
+  
+  var events = Calendar.Events.list(calendarId, {
+    timeMin: startDate.toISOString(),
+    timeMax: endDate.toISOString(),
+    singleEvents: true,
+    q: eventSummary // Search for events with this summary
+  });
+  
+  if (events.items && events.items.length > 0) {
+    for (var i = 0; i < events.items.length; i++) {
+      var existingEvent = events.items[i];
+      if (existingEvent.summary === eventSummary) {
+        return true; // Event with same summary and start time exists
+      }
+    }
+  }
+  
+  return false; // No matching event found
+}
