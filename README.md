@@ -1,5 +1,5 @@
 # ICS-to-Google-Calendar
-Simplifies adding ICS entries to Google Calendar
+Simplifies adding ICS entries you get in Gmail to Google Calendar
 
 I assume you know how to get to script.google.com and start a new project, and post the importEvents into the Code.gs tab and save it.  You will need to add in the Google Calendar service from the service tab before savings.  
 
