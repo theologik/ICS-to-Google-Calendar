@@ -3,6 +3,8 @@ Simplifies adding ICS entries to Google Calendar
 
 I assume you know how to get to script.google.com and start a new project, and post the importEvents into the Code.gs tab and save it.  You will need to add in the Google Calendar service from the service tab before savings.  
 
+To simplify use, you probably want to have Google drive mounted to your file system, on Win11, just download Google Drive Desktop.  You can then save ics to Gdrive.
+
 This script is designed to import events from an ICS file into Google Calendar. Here's a step-by-step breakdown of the process:
 
 1. **File Retrieval**:
